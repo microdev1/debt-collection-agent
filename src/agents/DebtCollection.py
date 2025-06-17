@@ -50,10 +50,8 @@ class DebtCollectionAgent(Agent):
         metadata = self.metadata
 
         if last_four_digits == metadata["customer"]["account_number"][-4:]:
-            await ctx.session.generate_reply(
-                instructions="Thank the customer for verifying their identity and continue with the call",
-            )
             return {
+                "verification_status": "success",
                 "customer": metadata["customer"],
                 "debt": metadata["debt"],
             }
