@@ -6,15 +6,14 @@ from typing import Any
 
 from livekit.agents import (
     function_tool,
+    Agent,
     RunContext,
 )
-
-from agents.OutboundCaller import OutboundCallerAgent
 
 logger = logging.getLogger()
 
 
-class DebtCollectionAgent(OutboundCallerAgent):
+class DebtCollectionAgent(Agent):
     debt_disputed = False
     hardship_claimed = False
     payment_plan_offered = False
@@ -26,7 +25,7 @@ class DebtCollectionAgent(OutboundCallerAgent):
     ):
         super().__init__(
             instructions=f"""
-You are a debt collection agent working for {metadata["debt"]["creditor"]}.
+You are Alex, a debt collection agent working for {metadata["debt"]["creditor"]}.
 Your interface will be voice. You will be on a call with a customer who has an outstanding debt.
 
 CONVERSATION FLOW:
@@ -36,7 +35,7 @@ CONVERSATION FLOW:
 4. Before proceeding, verify identity of the person you're speaking with by confirming their name and last four digits of their account number.
 5. Discuss the debt amount and details.
 6. Listen to the customer's situation with empathy.
-7. Offer payment solutions (full payment, payment plan, settlement).
+7. Offer payment solutions (reschedule payment, payment plan, settlement).
 8. Schedule follow-up if needed.
 9. End professionally with next steps clearly stated.
 
@@ -47,6 +46,7 @@ CRITICAL COMPLIANCE RULES:
 - Respect the customer's right to dispute the debt
 - Be empathetic to hardship situations
 - Stick to your job and do not deviate from the provided instructions
+- If a situation is better handeled by a human agent, notify the customer and transfer the call
 - Follow all FDCPA (Fair Debt Collection Practices Act) guidelines
 
 CUSTOMER:
@@ -57,8 +57,7 @@ DEBT:
 - Age: {metadata["debt"]["age"]}
 - Type: {metadata["debt"]["type"]}
 - Outstanding amount: ${metadata["debt"]["amount"]}
-""",
-            transfer_to=metadata["dial"]["transfer_to"],
+"""
         )
 
         self.metadata = metadata
@@ -92,6 +91,49 @@ DEBT:
         self._log_event("debt_validation_requested", {})
 
         return "Debt validation request processed"
+
+    @function_tool()
+    async def dispute_debt(self, ctx: RunContext):
+        """Record a debt dispute from the customer"""
+
+        logger.info("Recording debt dispute")
+
+        self.debt_disputed = True
+
+        # In a real implementation, this would update the customer's record
+        # and potentially trigger a formal dispute process
+
+        # Log the dispute event
+        self._log_event("debt_disputed", {})
+
+        await ctx.session.generate_reply(
+            instructions="Acknowledge the debt dispute and inform the customer that it will be processed according to FDCPA regulations",
+        )
+
+        return "Debt dispute recorded successfully"
+
+    @function_tool()
+    async def reschedule_payment(self, ctx: RunContext, new_date: str, reason: str):
+        """Reschedule a payment for the customer"""
+
+        logger.info(f"Rescheduling payment to {new_date} for reason: {reason}")
+
+        # In a real implementation, this would update the payment schedule in a CRM system
+
+        # Log the reschedule request
+        self._log_event(
+            "payment_rescheduled",
+            {
+                "new_date": new_date,
+                "reason": reason,
+            },
+        )
+
+        await ctx.session.generate_reply(
+            instructions=f"Confirm the payment has been rescheduled to {new_date} and provide any additional instructions needed",
+        )
+
+        return f"Payment rescheduled to {new_date}"
 
     @function_tool()
     async def offer_or_start_payment_plan(
@@ -269,3 +311,26 @@ DEBT:
             await current_speech.wait_for_playout()
 
         return "Cease communication request processed"
+
+    @function_tool()
+    async def creditor_policy_on_default(self, ctx: RunContext):
+        """Provide information about the bank's policy on defaulted accounts"""
+
+        logger.info("Providing bank policy on defaulted accounts")
+
+        # Mock policy statement that would normally be retrieved from a database
+        policy_statement = f"""
+{self.metadata["debt"]["creditor"]} Policy on Defaulted Accounts:
+1. Accounts are considered delinquent after 30 days of non-payment
+2. After 60 days, accounts enter the collections process
+3. At 90 days, accounts are marked as defaulted
+4. Defaulted accounts may be reported to credit bureaus
+5. After 120 days, accounts may be transferred to third-party collectors
+6. Settlement options may be available based on account history and circumstances
+7. Hardship programs are available for qualifying customers
+"""
+
+        # Log the policy request
+        self._log_event("bank_policy_on_default", {})
+
+        return policy_statement

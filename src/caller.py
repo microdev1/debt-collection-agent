@@ -21,7 +21,8 @@ from livekit.plugins import (
     noise_cancellation,  # noqa: F401
 )
 
-from agents.DebtCollector import DebtCollectionAgent
+from agents.DebtCollection import DebtCollectionAgent
+from agents.OutboundCaller import get_outbound_caller_agent
 
 # load environment variables, this is optional, only used for local development
 load_dotenv(dotenv_path=".env.local")
@@ -65,9 +66,9 @@ async def entrypoint(ctx: JobContext):
     # Parse the metadata from the dispatch
     metadata = json.loads(ctx.job.metadata)
 
-    participant_identity = phone_number = metadata["dial"]["phone_number"]
+    participant_identity = phone_number = metadata["dial"]["to"]
 
-    agent = DebtCollectionAgent(
+    agent = get_outbound_caller_agent(DebtCollectionAgent)(
         metadata=metadata,
     )
 
