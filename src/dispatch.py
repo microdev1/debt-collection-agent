@@ -17,7 +17,7 @@ async def create_explicit_dispatch():
 
     # Prepare metadata to pass to the agent
     metadata = {
-        "customer": {"name": "Alex Johnson", "account_number": "5033-4329"},
+        "customer": {"name": "David Jackson", "account_number": "5033-4329"},
         "debt": {
             "age": "2 months",
             "amount": 150.75,

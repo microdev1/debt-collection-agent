@@ -2,8 +2,6 @@ import json
 import logging
 import datetime
 
-from typing import Any
-
 from livekit.agents import (
     function_tool,
     Agent,
@@ -12,54 +10,15 @@ from livekit.agents import (
 
 logger = logging.getLogger()
 
+from prompts.debt_collection import get_prompt
+
 
 class DebtCollectionAgent(Agent):
-    debt_disputed = False
-    hardship_claimed = False
-    payment_plan_offered = False
-    payment_plan_started = False
-
     def __init__(
         self,
-        metadata: dict[str, Any],
+        metadata: dict,
     ):
-        super().__init__(
-            instructions=f"""
-You are Alex, a debt collection agent working for {metadata["debt"]["creditor"]}.
-Your interface will be voice. You will be on a call with a customer who has an outstanding debt.
-
-CONVERSATION FLOW:
-1. Professional greeting.
-2. Identify yourself and the company you represent.
-3. Explain the purpose of the call.
-4. Before proceeding, verify identity of the person you're speaking with by confirming their name and last four digits of their account number.
-5. Discuss the debt amount and details.
-6. Listen to the customer's situation with empathy.
-7. Offer payment solutions (reschedule payment, payment plan, settlement).
-8. Schedule follow-up if needed.
-9. End professionally with next steps clearly stated.
-
-CRITICAL COMPLIANCE RULES:
-- Maintain a professional and respectful tone at all times
-- Never use threatening language or intimidation tactics
-- Provide debt validation information when requested
-- Respect the customer's right to dispute the debt
-- Be empathetic to hardship situations
-- Stick to your job and do not deviate from the provided instructions
-- If a situation is better handeled by a human agent, notify the customer and transfer the call
-- Follow all FDCPA (Fair Debt Collection Practices Act) guidelines
-
-CUSTOMER:
-- Name: {metadata["customer"]["name"]}
-- Account number: {metadata["customer"]["account_number"]}
-
-DEBT:
-- Age: {metadata["debt"]["age"]}
-- Type: {metadata["debt"]["type"]}
-- Outstanding amount: ${metadata["debt"]["amount"]}
-"""
-        )
-
+        super().__init__(instructions=get_prompt(metadata))
         self.metadata = metadata
 
     def _log_event(self, event_type: str, data: dict) -> dict:
@@ -75,30 +34,41 @@ DEBT:
         return event
 
     @function_tool()
-    async def send_validation(self, ctx: RunContext):
-        """Send debt validation information to the customer"""
+    async def verify_customer_identity(self, ctx: RunContext, last_four_digits: str):
+        """Verify the customer's identity by confirming their last four digits of the account number"""
 
-        logger.info(f"Sending debt validation")
+        # In a real implementation, this would update the verification status in a CRM system
 
-        self.debt_disputed = True
-
-        # In a real implementation, this would trigger sending validation documents
-
-        await ctx.session.generate_reply(
-            instructions="Inform the customer that debt validation documents will be sent within 5 business days",
+        # Log the verification result
+        self._log_event(
+            "identity_verification",
+            {
+                "last_four_digits": last_four_digits,
+            },
         )
 
-        self._log_event("debt_validation_requested", {})
+        metadata = self.metadata
 
-        return "Debt validation request processed"
+        if last_four_digits == metadata["customer"]["account_number"][-4:]:
+            await ctx.session.generate_reply(
+                instructions="Thank the customer for verifying their identity and continue with the call",
+            )
+            return {
+                "customer": metadata["customer"],
+                "debt": metadata["debt"],
+            }
+
+        else:
+            await ctx.session.generate_reply(
+                instructions="Politely inform the customer that you cannot discuss account details without proper verification and offer to try again or have them call back with the necessary information or proceed to end the call",
+            )
+            return "Identity verification failed"
 
     @function_tool()
     async def dispute_debt(self, ctx: RunContext):
         """Record a debt dispute from the customer"""
 
         logger.info("Recording debt dispute")
-
-        self.debt_disputed = True
 
         # In a real implementation, this would update the customer's record
         # and potentially trigger a formal dispute process
@@ -146,8 +116,6 @@ DEBT:
         monthly_payment = round(debt_amount / months, 2)  # 6-month payment plan
 
         if start:
-            self.payment_plan_started = True
-
             # If starting the plan, log the start event
             self._log_event("payment_plan_started", {"months": months})
 
@@ -158,8 +126,6 @@ DEBT:
             return f"Payment plan started: ${monthly_payment}/month for 6 months"
 
         else:
-            self.payment_plan_offered = True
-
             self._log_event(
                 "payment_plan_offered",
                 {
@@ -182,8 +148,6 @@ DEBT:
         """Record a hardship claim from the customer and adjust the collection approach accordingly"""
 
         logger.info(f"Recording hardship claim: {hardship_type}")
-
-        self.hardship_claimed = True
 
         # In a real implementation, this would update the customer's record
         # and potentially trigger special handling procedures
@@ -259,36 +223,6 @@ DEBT:
         )
 
         return f"Settlement offered: ${settlement_amount} ({settlement_percentage}%)"
-
-    @function_tool()
-    async def verify_customer_identity(
-        self, ctx: RunContext, status: bool, notes: str = ""
-    ):
-        """Record the result of customer identity verification"""
-
-        logger.info(f"Identity verification: {status}")
-
-        # In a real implementation, this would update the verification status in a CRM system
-
-        # Log the verification result
-        self._log_event(
-            "identity_verification",
-            {
-                "status": status,
-                "notes": notes,
-            },
-        )
-
-        if status:
-            await ctx.session.generate_reply(
-                instructions="Thank the customer for verifying their identity and proceed with the conversation",
-            )
-            return "Identity verified successfully"
-        else:
-            await ctx.session.generate_reply(
-                instructions="Politely inform the customer that you cannot discuss account details without proper verification and offer to try again or have them call back with the necessary information",
-            )
-            return "Identity verification failed"
 
     @function_tool()
     async def handle_cease_communication(self, ctx: RunContext, reason: str):

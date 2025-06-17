@@ -30,7 +30,7 @@ def get_outbound_caller_agent(base: Type[Agent]):
         @function_tool()
         async def end_call(self, ctx: RunContext):
             """Called when conversation is over to end the call"""
-            logger.info(f"ending the call for {self.client.identity}")  # type: ignore
+            logger.info(f"ending the call")
 
             # let the agent finish speaking
             current_speech = ctx.session.current_speech
@@ -42,9 +42,7 @@ def get_outbound_caller_agent(base: Type[Agent]):
         @function_tool()
         async def detected_answering_machine(self, ctx: RunContext):
             """Called when the call reaches voicemail. Use this tool AFTER you hear the voicemail greeting"""
-            logger.info(
-                f"detected answering machine for {self.client.identity}"  # type: ignore
-            )
+            logger.info(f"detected answering machine")
             await self._hangup()
 
         @function_tool()
@@ -52,6 +50,7 @@ def get_outbound_caller_agent(base: Type[Agent]):
             """Transfer the call to a human agent, called after confirming with the user"""
 
             transfer_to = self._transfer_to
+
             if not transfer_to:
                 return "sorry, cannot transfer the call at the moment"
 
@@ -63,8 +62,7 @@ def get_outbound_caller_agent(base: Type[Agent]):
                 await job_ctx.api.sip.transfer_sip_participant(
                     api.TransferSIPParticipantRequest(
                         room_name=job_ctx.room.name,
-                        participant_identity=self.client.identity,  # type: ignore
-                        transfer_to=f"tel:{transfer_to}",
+                        transfer_to=transfer_to,
                     )
                 )
                 logger.info(f"transferred call to {transfer_to}")
