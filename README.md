@@ -27,6 +27,11 @@ uv run src/dispatch.py
 uv run src/caller.py
 ```
 
+## ➡️ Architecture
+![](https://docs.livekit.io/images/agents/realtime-model.svg)
+![](https://docs.livekit.io/images/sip/outbound-sip-workflow.svg)
+![](https://docs.livekit.io/images/sip/architecture.svg)
+
 ## 🛠️ Technical Stack
 
 - **Package Manager**: uv (high-performance Python package installer and resolver)
@@ -35,7 +40,7 @@ uv run src/caller.py
 - **Noise Cancellation**: BVC (Background Voice Cancellation)
 - **Telephony**: Twilio + LiveKit SIP
 
-## 🔑 Resource Setup
+## 🔧 Resource Setup
 
 The following resources have been configured for this project:
 
@@ -44,7 +49,7 @@ The following resources have been configured for this project:
 3. LiveKit outbound trunk - Integrated with Twilio credentials for call handling
 4. OpenAI account - Powers the conversational AI capabilities
 
-## 🔧 Environment Variables
+## 🔑 Environment Variables
 
 The project requires the following environment variables to be set in your `.env.local` file:
 
@@ -56,7 +61,7 @@ The project requires the following environment variables to be set in your `.env
 - `OPENAI_API_KEY` - Your OpenAI API key
 
 
-## ⚠️ Compliance
+## 👨‍⚖️ Compliance
 
 The agent strictly adheres to Fair Debt Collection Practices Act (FDCPA) requirements:
 - Always identifies as a debt collector
