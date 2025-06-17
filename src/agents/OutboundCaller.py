@@ -11,8 +11,6 @@ logger = logging.getLogger()
 
 def get_outbound_caller_agent(base: Type[Agent]):
     class OutboundCallerAgent(base):
-        client: rtc.RemoteParticipant
-
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
             metadata = kwargs.get("metadata", {})
