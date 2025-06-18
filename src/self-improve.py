@@ -5,17 +5,21 @@ import difflib
 
 from datetime import datetime
 
+from livekit import api, rtc
+from livekit.agents import AgentSession, RoomInputOptions, RoomOutputOptions
 from livekit.agents.llm import ChatContext, LLMStream
 from livekit.plugins import openai
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
-from rich import print as rprint
 from rich.syntax import Syntax
 
-from prompts.customer import get_prompt as get_customer_prompt
 from prompts.debt_collection import get_prompt as get_debt_collection_prompt
+
+from agents.Customer import CustomerAgent
+from agents.DebtCollection import DebtCollectionAgent
+from agents.OutboundCallerTest import get_outbound_caller_test_agent
 
 from dotenv import load_dotenv
 
@@ -77,68 +81,89 @@ ONLY output the behavioural description combined with backstory.
     )
 
 
-async def have_conversation(metadata: dict, turns=20):
+async def have_conversation(metadata: dict, turns=20, text_mode=True):
     """
     Simulates a conversation between a customer agent and a debt collection agent.
     The agents are connected to a LiveKit room to demonstrate realistic agent communication.
     """
-    hangup_msg = "\n\nIf you want to hangup the call just repond with 'hangup'."
+    # Set up a LiveKit API client
+    lkapi = api.LiveKitAPI()
 
-    transcript = []
+    room_name = f"debt-collector-test-room"
 
-    customer_ctx = ChatContext()
-    customer_ctx.add_message(
-        role="system", content=get_customer_prompt(metadata["customer"]) + hangup_msg
-    )
+    try:
+        # Create the room
+        await lkapi.room.create_room(api.CreateRoomRequest(name=room_name))
 
-    collector_ctx = ChatContext()
-    collector_ctx.add_message(
-        role="system",
-        content=get_debt_collection_prompt(metadata=metadata)
-        + f"\n\nThis is a test scenario, so tools aren't available. You can verify user manually by asking for last four digits of their account number."
-        + f"\n{str(metadata)}"
-        + hangup_msg,
-    )
-
-    def add_message(msg: str, speaker_is_customer: bool):
-        if speaker_is_customer:
-            customer_ctx.add_message(role="assistant", content=msg)
-            collector_ctx.add_message(role="user", content=msg)
-
-        else:
-            customer_ctx.add_message(role="user", content=msg)
-            collector_ctx.add_message(role="assistant", content=msg)
-
-        role = "customer" if speaker_is_customer else "agent"
-        transcript_entry = {
-            "role": role,
-            "text": msg,
+        # Set up the agent session config
+        session_config = {
+            "room_input_options": RoomInputOptions(text_enabled=True),
+            "room_output_options": RoomOutputOptions(
+                audio_enabled=not text_mode, transcription_enabled=True
+            ),
         }
 
-        transcript.append(transcript_entry)
+        # Create the agents
+        agent1 = get_outbound_caller_test_agent(CustomerAgent)(**metadata["customer"])
+        agent2 = get_outbound_caller_test_agent(DebtCollectionAgent)(metadata=metadata)
 
-        # Print colorful message
-        role_display = f"[bold {COLORS[role]}]{role.upper()}[/bold {COLORS[role]}]"
-        rprint(f"{role_display}: {msg}")
+        # Create the sessions
+        session1 = AgentSession(llm=openai.realtime.RealtimeModel())
+        session2 = AgentSession(llm=openai.realtime.RealtimeModel())
 
-    add_message("Hello, who is this?", speaker_is_customer=True)
+        # Create the rooms
+        room = rtc.Room()
 
-    llm = openai.LLM(model=LLM_MODEL)
+        # Connect to the rooms
+        await room.connect(
+            os.environ["LIVEKIT_URL"],
+            os.environ["LIVEKIT_API_SECRET"],
+            options=rtc.RoomOptions(auto_subscribe=True),
+        )
 
-    for _ in range(turns):
-        reply = await get_llm_stream_content(llm.chat(chat_ctx=collector_ctx))
-        add_message(reply, speaker_is_customer=False)
+        # Start the agent sessions
+        await session1.start(agent=agent1, room=room, **session_config)
+        await session2.start(agent=agent2, room=room, **session_config)
 
-        if "hangup" in reply.lower():
-            break
+        # Simulate a conversation: agent1 speaks, agent2 replies, repeat
+        transcript = []
 
-        reply = await get_llm_stream_content(llm.chat(chat_ctx=customer_ctx))
-        add_message(reply, speaker_is_customer=True)
+        # We need to extract text from the response, using str() as a fallback
+        reply = await session1.generate_reply(user_input="Hello, who is this?")
+        transcript.append({"role": "agent1", "text": str(reply)})
 
-        if "hangup" in reply.lower():
-            break
+        for _ in range(turns):
+            # Agent 2 responds to Agent 1
+            reply2 = await session2.generate_reply()
+            transcript.append({"role": "agent2", "text": str(reply2)})
 
-    return transcript
+            if agent2.hangup:
+                break
+
+            # Agent 1 generates a reply
+            reply1 = await session1.generate_reply()
+            transcript.append({"role": "customer", "text": str(reply1)})
+
+            if agent1.hangup:
+                break
+
+        # Save transcript to log file with timestamp
+        log_filename = os.path.join(LOG_DIR, f"transcript_{room_name}.json")
+        with open(log_filename, "w") as f:
+            json.dump(transcript, f, indent=2, ensure_ascii=False)
+
+        # Close the rooms and sessions
+        await room.disconnect()
+
+        return transcript
+
+    finally:
+        # Clean up by deleting the room
+        try:
+            await lkapi.room.delete_room(api.DeleteRoomRequest(room=room_name))
+        except Exception as e:
+            print(f"Error deleting room: {e}")
+        await lkapi.aclose()
 
 
 async def analyze(transcript):
