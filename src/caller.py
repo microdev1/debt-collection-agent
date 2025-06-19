@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import logging
-import datetime
 
 from dotenv import load_dotenv
 
@@ -16,6 +15,8 @@ from livekit.agents import (
 )
 from livekit.plugins import openai, noise_cancellation
 
+from utils.transcript import setup_transcript
+
 from agents.DebtCollection import DebtCollectionAgent
 from agents.OutboundCaller import get_outbound_caller_agent
 
@@ -26,25 +27,6 @@ logger.setLevel(logging.INFO)
 
 AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "outbound-caller")
 OUTBOUND_TRUNK = os.environ["LIVEKIT_SIP_OUTBOUND_TRUNK"]
-
-LOG_DIR = os.environ.get("LOG_DIR", "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-
-
-def setup_transcript(ctx: JobContext, session: AgentSession):
-    async def save_transcript():
-        current_date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(
-            LOG_DIR, f"transcript_{ctx.room.name}_{current_date}.json"
-        )
-
-        try:
-            with open(filename, "w") as f:
-                json.dump(session.history.to_dict(), f, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to save transcript: {e}")
-
-    ctx.add_shutdown_callback(save_transcript)
 
 
 async def entrypoint(ctx: JobContext):
