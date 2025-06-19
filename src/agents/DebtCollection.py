@@ -237,12 +237,7 @@ class DebtCollectionAgent(Agent):
             instructions="Acknowledge the customer's request to cease communication, confirm that their request will be honored according to FDCPA regulations, and provide a professional closing to the call",
         )
 
-        # After the agent has acknowledged the request, end the call
-        current_speech = ctx.session.current_speech
-        if current_speech:
-            await current_speech.wait_for_playout()
-
-        return "Cease communication request processed"
+        return "cease communication request processed"
 
     @function_tool()
     async def creditor_policy_on_default(self, ctx: RunContext):

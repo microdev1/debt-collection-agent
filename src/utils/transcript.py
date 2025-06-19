@@ -20,7 +20,7 @@ def setup_transcript(ctx: JobContext, session: AgentSession, prefix="transcript"
     async def save_transcript():
         current_date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = os.path.join(
-            LOG_DIR, f"{prefix}_{ctx.room.name}_{current_date}.json"
+            LOG_DIR, f"{prefix}_{current_date}_{ctx.room.name}.json"
         )
 
         try:

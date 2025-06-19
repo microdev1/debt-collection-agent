@@ -5,16 +5,20 @@ import difflib
 
 from datetime import datetime
 
+from livekit.agents import AgentSession, RoomInputOptions, RoomOutputOptions
 from livekit.agents.llm import ChatContext, LLMStream
 from livekit.plugins import openai
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
-from rich import print as rprint
 from rich.syntax import Syntax
+from rich import print as rprint
 
-from prompts.customer import get_prompt as get_customer_prompt
+from agents.Customer import CustomerAgent
+from agents.DebtCollection import DebtCollectionAgent
+from agents.OutboundCallerTest import get_outbound_caller_test_agent
+
 from prompts.debt_collection import get_prompt as get_debt_collection_prompt
 
 from dotenv import load_dotenv
@@ -25,7 +29,7 @@ load_dotenv(".env.local")
 console = Console()
 
 
-LLM_MODEL = "gpt-4.1-mini"
+LLM_MODEL = "gpt-4.1-nano"
 
 LOG_DIR = os.environ.get("LOG_DIR", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -77,66 +81,68 @@ ONLY output the behavioural description combined with backstory.
     )
 
 
-async def have_conversation(metadata: dict, turns=20):
+async def have_conversation(metadata: dict, turns=20, text_mode=True):
     """
     Simulates a conversation between a customer agent and a debt collection agent.
-    The agents are connected to a LiveKit room to demonstrate realistic agent communication.
     """
-    hangup_msg = "\n\nIf you want to hangup the call just repond with 'hangup'."
+    session_config = {
+        "room_input_options": RoomInputOptions(text_enabled=text_mode),
+        "room_output_options": RoomOutputOptions(
+            audio_enabled=not text_mode, transcription_enabled=True
+        ),
+    }
+
+    # Create agents
+    agents = [
+        {
+            "role": "agent",
+            "agent": get_outbound_caller_test_agent(DebtCollectionAgent)(
+                metadata=metadata
+            ),
+            "session": AgentSession(llm=openai.LLM(model="gpt-4.1-mini")),
+        },
+        {
+            "role": "customer",
+            "agent": CustomerAgent(**metadata["customer"]),
+            "session": AgentSession(llm=openai.LLM(model="gpt-4.1-nano")),
+        },
+    ]
+
+    for agent in agents:
+        await agent["session"].start(agent=agent["agent"], **session_config)
 
     transcript = []
 
-    customer_ctx = ChatContext()
-    customer_ctx.add_message(
-        role="system", content=get_customer_prompt(metadata["customer"]) + hangup_msg
-    )
-
-    collector_ctx = ChatContext()
-    collector_ctx.add_message(
-        role="system",
-        content=get_debt_collection_prompt(metadata=metadata)
-        + f"\n\nThis is a test scenario, so tools aren't available. You can verify user manually by asking for last four digits of their account number."
-        + f"\n{str(metadata)}"
-        + hangup_msg,
-    )
-
-    def add_message(msg: str, speaker_is_customer: bool):
-        if speaker_is_customer:
-            customer_ctx.add_message(role="assistant", content=msg)
-            collector_ctx.add_message(role="user", content=msg)
-
-        else:
-            customer_ctx.add_message(role="user", content=msg)
-            collector_ctx.add_message(role="assistant", content=msg)
-
-        role = "customer" if speaker_is_customer else "agent"
-        transcript_entry = {
-            "role": role,
-            "text": msg,
-        }
-
-        transcript.append(transcript_entry)
-
-        # Print colorful message
+    def add_message(role: str, text: str):
+        transcript.append({"role": role, "text": text})
         role_display = f"[bold {COLORS[role]}]{role.upper()}[/bold {COLORS[role]}]"
-        rprint(f"{role_display}: {msg}")
+        rprint(f"{role_display}: {text}")
 
-    add_message("Hello, who is this?", speaker_is_customer=True)
+    add_message("customer", "Hello, who is this?")
 
-    llm = openai.LLM(model=LLM_MODEL)
+    def check_hangup(agent_info):
+        if hasattr(agent_info["agent"], "hangup") and agent_info["agent"].hangup:
+            add_message(agent_info["role"], text="hangup")
+            return True
+        return False
 
     for _ in range(turns):
-        reply = await get_llm_stream_content(llm.chat(chat_ctx=collector_ctx))
-        add_message(reply, speaker_is_customer=False)
+        for agent in agents:
+            while not (
+                reply := await agent["session"].generate_reply(
+                    user_input=transcript[-1]["text"]
+                )
+            ).chat_message:
+                if check_hangup(agent):
+                    return transcript
+                print(".", end="")
 
-        if "hangup" in reply.lower():
-            break
+            print()
 
-        reply = await get_llm_stream_content(llm.chat(chat_ctx=customer_ctx))
-        add_message(reply, speaker_is_customer=True)
+            add_message(agent["role"], reply.chat_message.content[0])
 
-        if "hangup" in reply.lower():
-            break
+            if check_hangup(agent):
+                return transcript
 
     return transcript
 
@@ -296,5 +302,23 @@ async def self_improve():
     )
 
 
+async def quick_convo():
+    metadata = {
+        "customer": {
+            "name": "Richard Smith",
+            "account_number": "4189-5033",
+            "personality": "",
+        },
+        "debt": {
+            "age": "2 months",
+            "amount": 150.75,
+            "creditor": "Bank of America",
+            "type": "Credit Card",
+        },
+    }
+
+    await have_conversation(metadata)
+
+
 if __name__ == "__main__":
-    asyncio.run(self_improve())
+    asyncio.run(quick_convo())
