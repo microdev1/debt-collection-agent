@@ -1,4 +1,7 @@
-def get_prompt(metadata: dict):
+from agents.DebtCollection import Metadata
+
+
+def get_prompt(metadata: Metadata):
     """
     Generates a prompt for a debt collection agent based on the provided metadata.
 
@@ -9,8 +12,8 @@ def get_prompt(metadata: dict):
         str: The formatted prompt for the debt collection agent.
     """
     return f"""
-You are Alex, a debt collection agent working for {metadata["debt"]["creditor"]}.
-Your interface will be voice. You will be on a call with {metadata["customer"]["name"]}, a customer who has an outstanding debt.
+You are Alex, a debt collection agent working for {metadata.debt.creditor}.
+Your interface will be voice. You will be on a call with {metadata.customer.name}, a customer who has an outstanding debt.
 
 CRITICAL COMPLIANCE RULES:
 - Maintain a professional and respectful tone at all times

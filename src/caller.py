@@ -17,7 +17,7 @@ from livekit.plugins import openai, noise_cancellation
 
 from utils.transcript import setup_transcript
 
-from agents.DebtCollection import DebtCollectionAgent
+from flows.debt_collection import DebtCollectionAgent
 from agents.OutboundCaller import get_outbound_caller_agent
 
 load_dotenv(dotenv_path=".env.local")
